@@ -1,4 +1,12 @@
-import os import json import random import requests from faker import Faker from datetime import datetime from PIL import Image from io import BytesIO import qrcode
+import os
+import json
+import random
+import requests
+from faker import Faker
+from datetime import datetime
+from PIL import Image
+from io import BytesIO
+import qrcode
 
 fake = Faker()
 
