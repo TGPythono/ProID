@@ -1,73 +1,90 @@
-import os
-import json
-import random
-import requests
-from faker import Faker
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+from time import sleep
 from datetime import datetime
-from PIL import Image
-from io import BytesIO
-import qrcode
+import random
 
-fake = Faker()
+# جمع البيانات من المستخدم
+fb_email = input("اكتب إيميلك أو رقمك على فيسبوك: ")
+fb_pass = input("اكتب كلمة السر: ")
+short_link = input("اكتب الرابط المختصر الي تريد تنشره: ")
+max_groups = int(input("كم عدد الكروبات؟ "))
+max_comments = int(input("كم تعليق لكل كروب؟ "))
+message_type = input("شنو نوع الرسالة؟ (مثلاً: معلومات انستا): ")
 
-قائمة دول
+# إعدادات
+groups_per_batch = 10
+comments_per_batch = max_comments
+sleep_between_batches = 3600  # استراحة ساعة
 
-countries = ['Iraq', 'USA', 'Germany', 'France', 'Egypt', 'Japan', 'Turkey', 'Brazil', 'Russia', 'India']
+comment_templates = [
+    f"ما توقعت هذا الشي أبد! شوف بنفسك: {short_link}",
+    f"شفت هذا الرابط وصدگ صدمت، جربه: {short_link}",
+    f"ما أگدر أشرح، الرابط يوضحلك: {short_link}",
+    f"ضروري الكل يشوف هذا الشي: {short_link}"
+]
 
-إنشاء مجلد التخزين
+# إعداد المتصفح
+options = Options()
+options.add_argument("--disable-notifications")
+driver = webdriver.Chrome(options=options)
 
-if not os.path.exists("output/ids"): os.makedirs("output/ids")
+# تسجيل دخول
+driver.get("https://www.facebook.com")
+sleep(3)
+driver.find_element(By.ID, "email").send_keys(fb_email)
+driver.find_element(By.ID, "pass").send_keys(fb_pass)
+driver.find_element(By.NAME, "login").click()
+sleep(5)
 
-توليد صورة شخصية وهمية
+# البحث عن كروبات
+driver.get("https://www.facebook.com/search/groups/?q=")
+sleep(5)
+groups = driver.find_elements(By.XPATH, "//a[contains(@href, '/groups/') and contains(@href, 'public')]")
 
-def generate_fake_image(save_path): try: response = requests.get("https://thispersondoesnotexist.com", headers={"User-Agent": "Mozilla/5.0"}) if response.status_code == 200: with open(save_path, 'wb') as f: f.write(response.content) return True except: pass return False
+visited = set()
+count = 0
 
-توليد هوية وهمية
+while count < max_groups:
+    print(f"[{datetime.now()}] بدء دفعة جديدة...")
+    batch_groups = 0
+    for group in groups:
+        group_link = group.get_attribute("href")
+        if group_link and group_link not in visited and count < max_groups:
+            visited.add(group_link)
+            driver.get(group_link)
+            sleep(random.randint(7, 12))
+            print(f"[+] دخل الكروب: {group_link}")
 
-def generate_fake_id(country): full_name = fake.name() id_number = fake.unique.uuid4() birth_date = fake.date_of_birth(minimum_age=18, maximum_age=60).strftime("%Y-%m-%d") address = fake.address().replace("\n", ", ") phone = fake.phone_number() email = fake.email() blood_type = random.choice(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']) gender = random.choice(['Male', 'Female']) job = fake.job() signature = fake.name() + "_sig" fingerprint = fake.sha1() coordinates = f"{fake.latitude()}, {fake.longitude()}" creation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            posts = driver.find_elements(By.XPATH, "//div[@aria-posinset]")
+            commented = 0
+            for post in posts:
+                try:
+                    comment_area = post.find_element(By.XPATH, ".//div[contains(@aria-label, 'اكتب تعليقًا') or contains(@aria-label, 'Write a comment')]")
+                    comment_area.click()
+                    sleep(1)
+                    text = random.choice(comment_templates)
+                    comment_area.send_keys(text)
+                    comment_area.send_keys(Keys.RETURN)
+                    sleep(random.randint(7, 10))
 
-image_path = f"output/ids/{full_name.replace(' ', '_')}_photo.jpg"
-generate_fake_image(image_path)
+                    post_link_el = post.find_element(By.XPATH, ".//a[contains(@href, '/posts/')]")
+                    post_link = post_link_el.get_attribute("href")
+                    print(f"[✓] تم نشر تعليق في: {post_link}")
+                    commented += 1
+                    if commented >= comments_per_batch:
+                        break
+                except Exception as e:
+                    continue
+            count += 1
+            batch_groups += 1
+            if batch_groups >= groups_per_batch:
+                break
+    if count < max_groups:
+        print(f"[{datetime.now()}] استراحة لمدة ساعة...")
+        sleep(sleep_between_batches)
 
-qr_data = f"{full_name} | {id_number} | {country}"
-qr_img = qrcode.make(qr_data)
-qr_path = f"output/ids/{full_name.replace(' ', '_')}_qr.png"
-qr_img.save(qr_path)
-
-identity = {
-    "full_name": full_name,
-    "id_number": id_number,
-    "birth_date": birth_date,
-    "gender": gender,
-    "country": country,
-    "address": address,
-    "phone": phone,
-    "email": email,
-    "blood_type": blood_type,
-    "job": job,
-    "signature": signature,
-    "fingerprint": fingerprint,
-    "coordinates": coordinates,
-    "created_at": creation_time,
-    "photo": image_path,
-    "qr_code": qr_path
-}
-
-json_path = f"output/ids/{full_name.replace(' ', '_')}_id.json"
-with open(json_path, 'w') as f:
-    json.dump(identity, f, indent=4)
-
-print(f"[+] Generated ID for {full_name} ({country})")
-
-تشغيل الأداة
-
-if name == 'main': print("\n--- توليد هويات وهمية احترافية ---") for i, c in enumerate(countries): print(f"{i + 1}. {c}")
-
-choice = int(input("اختر الدولة: ")) - 1
-num = int(input("كم هوية تريد توليدها؟: "))
-
-for _ in range(num):
-    generate_fake_id(countries[choice])
-
-print("\nتم توليد جميع الهويات بنجاح وحفظها في مجلد 'output/ids'")
-
+print("[✓] انتهى النشر بكل الدُفعات!")
+driver.quit()
